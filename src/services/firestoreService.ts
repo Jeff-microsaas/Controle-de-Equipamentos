@@ -20,7 +20,7 @@ const HISTORY_COLLECTION = 'history';
 const USERS_COLLECTION = 'users';
 
 export const DEFAULT_ADMIN_EMAIL = 'admin@digidox.net';
-export const DEFAULT_ADMIN_PASS = 'Digidox@2023';
+export const DEFAULT_ADMIN_PASS = 'Digidox<@>2023';
 
 export const DEFAULT_ANALYST_EMAIL = 'analista@digidox.net';
 export const DEFAULT_ANALYST_PASS = 'Analista@123';
@@ -29,6 +29,7 @@ export const DEFAULT_RELBIO_EMAIL = 'relbio@digidox.net';
 export const DEFAULT_RELBIO_PASS = 'Relbio@123';
 
 export const RUNTIME_ADMIN_EMAIL = 'digidoxfornecedores@gmail.com';
+export const RUNTIME_ADMIN_PASS = 'Digidox@2023';
 
 const USERS_CACHE_KEY = 'equip_control_users_cache_v2';
 
@@ -145,14 +146,14 @@ export function getLocalMonthsCache(): MonthSheetData[] {
 export async function ensureRuntimeAdminUser(): Promise<AppUser> {
   const email = RUNTIME_ADMIN_EMAIL.toLowerCase();
   const docId = email.replace(/[@.]/g, '_');
-  const hashedPass = await hashPassword(DEFAULT_ADMIN_PASS);
+  const hashedPass = await hashPassword(RUNTIME_ADMIN_PASS);
 
   const runtimeAdmin: AppUser = {
     uid: docId,
     email: RUNTIME_ADMIN_EMAIL,
     displayName: 'Digidox Fornecedores (Admin)',
     role: 'admin',
-    password: DEFAULT_ADMIN_PASS,
+    password: RUNTIME_ADMIN_PASS,
     passwordHash: hashedPass,
     createdAt: new Date().toISOString(),
   };
@@ -171,7 +172,7 @@ export async function ensureRuntimeAdminUser(): Promise<AppUser> {
           userRef,
           {
             role: 'admin',
-            password: DEFAULT_ADMIN_PASS,
+            password: RUNTIME_ADMIN_PASS,
             passwordHash: hashedPass,
             displayName: data.displayName || 'Digidox Fornecedores (Admin)',
           },
@@ -187,7 +188,7 @@ export async function ensureRuntimeAdminUser(): Promise<AppUser> {
 }
 
 /**
- * Ensures the admin@digidox.net user is always provisioned in the Firestore database
+ * Ensures the admin@digidox.net user is always provisioned in the Firestore database with password Digidox<@>2023
  */
 export async function ensureDefaultAdminUser(): Promise<AppUser> {
   const email = DEFAULT_ADMIN_EMAIL.toLowerCase();
@@ -208,25 +209,19 @@ export async function ensureDefaultAdminUser(): Promise<AppUser> {
 
   try {
     const userRef = doc(db, USERS_COLLECTION, docId);
-    const userSnap = await getDoc(userRef);
-
-    if (!userSnap.exists()) {
-      await setDoc(userRef, adminUser);
-    } else {
-      const data = userSnap.data();
-      if (data.role !== 'admin' || !data.password) {
-        await setDoc(
-          userRef,
-          {
-            role: 'admin',
-            password: DEFAULT_ADMIN_PASS,
-            passwordHash: hashedPass,
-            displayName: data.displayName || 'Administrador Digidox',
-          },
-          { merge: true }
-        );
-      }
-    }
+    await setDoc(
+      userRef,
+      {
+        uid: docId,
+        email: DEFAULT_ADMIN_EMAIL,
+        role: 'admin',
+        password: DEFAULT_ADMIN_PASS,
+        passwordHash: hashedPass,
+        displayName: 'Administrador Digidox',
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
   } catch (e) {
     console.warn('Could not sync default admin to Firestore:', e);
   }
@@ -368,41 +363,51 @@ export async function loginWithDb(emailInput: string, passwordInput: string): Pr
 
   const docId = normalizedEmail.replace(/[@.]/g, '_');
 
-  // 1. Direct, instant check for Administrator credentials (admin@digidox.net or digidoxfornecedores@gmail.com)
-  const isDefaultAdmin =
-    normalizedEmail === DEFAULT_ADMIN_EMAIL.toLowerCase() ||
-    normalizedEmail === RUNTIME_ADMIN_EMAIL.toLowerCase();
-
-  if (isDefaultAdmin) {
+  // 1. Direct check for Administrator credentials (admin@digidox.net) - Senha exclusiva: Digidox<@>2023
+  if (normalizedEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
     const isAdminPassValid =
       passwordInput === DEFAULT_ADMIN_PASS ||
-      trimmedPass === DEFAULT_ADMIN_PASS ||
-      passwordInput.toLowerCase() === DEFAULT_ADMIN_PASS.toLowerCase() ||
+      trimmedPass === DEFAULT_ADMIN_PASS;
+
+    if (isAdminPassValid) {
+      const adminUser: AppUser = {
+        uid: docId,
+        email: DEFAULT_ADMIN_EMAIL,
+        displayName: 'Administrador Digidox',
+        role: 'admin',
+        createdAt: new Date().toISOString(),
+      };
+      cacheUserLocally(adminUser);
+      // Ensure sync to database in background
+      ensureDefaultAdminUser().catch((e) => console.warn('Background admin sync error:', e));
+      return adminUser;
+    }
+  }
+
+  // 1b. Direct check for Runtime Administrator credentials (digidoxfornecedores@gmail.com) - Mantém Digidox@2023
+  if (normalizedEmail === RUNTIME_ADMIN_EMAIL.toLowerCase()) {
+    const isRuntimePassValid =
+      passwordInput === RUNTIME_ADMIN_PASS ||
+      trimmedPass === RUNTIME_ADMIN_PASS ||
+      passwordInput.toLowerCase() === RUNTIME_ADMIN_PASS.toLowerCase() ||
       passwordInput === 'admin' ||
       trimmedPass === 'admin' ||
       passwordInput === 'admin123' ||
       trimmedPass === 'admin123' ||
       passwordInput === '123456' ||
-      trimmedPass === '123456' ||
-      passwordInput === 'Digidox@2024' ||
-      passwordInput === 'Digidox@2025' ||
-      passwordInput === 'Digidox@2026';
+      trimmedPass === '123456';
 
-    if (isAdminPassValid) {
-      const adminUser: AppUser = {
+    if (isRuntimePassValid) {
+      const runtimeAdminUser: AppUser = {
         uid: docId,
-        email: normalizedEmail === RUNTIME_ADMIN_EMAIL.toLowerCase() ? RUNTIME_ADMIN_EMAIL : DEFAULT_ADMIN_EMAIL,
-        displayName: normalizedEmail === RUNTIME_ADMIN_EMAIL.toLowerCase() ? 'Digidox Fornecedores (Admin)' : 'Administrador Digidox',
+        email: RUNTIME_ADMIN_EMAIL,
+        displayName: 'Digidox Fornecedores (Admin)',
         role: 'admin',
         createdAt: new Date().toISOString(),
       };
-      cacheUserLocally(adminUser);
-      // Non-blocking sync in background
-      ensureDefaultAdminUser().catch((e) => console.warn('Background admin sync error:', e));
-      if (normalizedEmail === RUNTIME_ADMIN_EMAIL.toLowerCase()) {
-        ensureRuntimeAdminUser().catch((e) => console.warn('Background runtime admin sync error:', e));
-      }
-      return adminUser;
+      cacheUserLocally(runtimeAdminUser);
+      ensureRuntimeAdminUser().catch((e) => console.warn('Background runtime admin sync error:', e));
+      return runtimeAdminUser;
     }
   }
 
