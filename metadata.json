@@ -1,0 +1,8 @@
+{
+  "name": "Remix Controle de Equipamentos - V2.0",
+  "description": "Planilha dinâmica para gestão de instalações, previsões mensais, estoque atual e cálculo automático de compras de equipamentos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

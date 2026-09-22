@@ -1,0 +1,149 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Usuário do sistema de controle de equipamentos",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Identificador único do usuário"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "E-mail de autenticação do usuário"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Nome de exibição do usuário"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "operator"],
+          "description": "Papel do usuário no sistema. Somente admin pode alterar estoque."
+        },
+        "password": {
+          "type": "string",
+          "description": "Senha para autenticação"
+        },
+        "passwordHash": {
+          "type": "string",
+          "description": "Hash seguro SHA-256 da senha"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Data e hora de criação"
+        }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "MonthSheet": {
+      "title": "MonthSheet",
+      "description": "Planilha com dados consolidados do mês (instalações, previsões, estoques)",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Identificador do mês (ex: setembro, outubro, etc.)"
+        },
+        "monthName": {
+          "type": "string",
+          "description": "Nome de exibição da aba do mês"
+        },
+        "installations": {
+          "type": "array",
+          "description": "Linhas de instalações e envios com status"
+        },
+        "forecasts": {
+          "type": "array",
+          "description": "Linhas de previsões de instalações"
+        },
+        "initialStock": {
+          "type": "array",
+          "description": "Estoque inicial de equipamentos"
+        },
+        "reformedStock": {
+          "type": "array",
+          "description": "Estoque inicial de equipamentos reformados"
+        },
+        "controllers": {
+          "type": "array",
+          "description": "Estoque de controladoras"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Última data de modificação"
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "Nome ou e-mail do usuário que atualizou"
+        }
+      },
+      "required": ["id", "monthName", "initialStock"]
+    },
+    "History": {
+      "title": "History",
+      "description": "Registro de auditoria e histórico de todas as operações no sistema",
+      "type": "object",
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Data e hora em que a ação ocorreu"
+        },
+        "userName": {
+          "type": "string",
+          "description": "Nome do usuário que realizou a ação"
+        },
+        "userEmail": {
+          "type": "string",
+          "format": "email",
+          "description": "E-mail do usuário que realizou a ação"
+        },
+        "userRole": {
+          "type": "string",
+          "enum": ["admin", "operator"],
+          "description": "Perfil do usuário no momento da ação"
+        },
+        "action": {
+          "type": "string",
+          "description": "Título descritivo da ação realizada"
+        },
+        "details": {
+          "type": "string",
+          "description": "Detalhes completos das alterações salvas"
+        },
+        "monthName": {
+          "type": "string",
+          "description": "Nome da aba do mês impactada"
+        },
+        "monthId": {
+          "type": "string",
+          "description": "ID do mês impactado"
+        },
+        "category": {
+          "type": "string",
+          "description": "Categoria da alteração (estoque, instalacao, previsao, usuario, aba)"
+        }
+      },
+      "required": ["timestamp", "userEmail", "action", "details"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Coleção de perfis de usuários com credenciais e papel (admin/operator)"
+    },
+    "/months/{monthId}": {
+      "schema": "MonthSheet",
+      "description": "Coleção de planilhas mensais sincronizadas em nuvem"
+    },
+    "/history/{historyId}": {
+      "schema": "History",
+      "description": "Registro completo de histórico de alterações e auditoria para todas as operações"
+    }
+  }
+}
