@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Lock, Mail, User, ShieldCheck, ArrowRight, AlertCircle, Eye, EyeOff, Shield } from 'lucide-react';
-import { DEFAULT_ADMIN_EMAIL, DEFAULT_ANALYST_EMAIL, DEFAULT_RELBIO_EMAIL } from '../services/firestoreService';
 
 export const LoginScreen: React.FC = () => {
   const { login, register } = useAuth();
@@ -110,69 +109,6 @@ export const LoginScreen: React.FC = () => {
             </div>
             <span className="text-[11px] text-slate-400 font-mono">Autenticação Segura</span>
           </div>
-
-          {/* Reference Info Card - purely informative, without any auto-fill action */}
-          {!isRegister && (
-            <div className="mb-5 p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1.5">
-              <div className="font-semibold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-                <Shield className="w-3.5 h-3.5 text-[#107c41]" />
-                <span>Credenciais do Sistema</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] mt-1">
-                <div
-                  onClick={() => {
-                    setEmail(DEFAULT_ADMIN_EMAIL);
-                    setPassword('Digidox@2023');
-                    setError(null);
-                  }}
-                  className="bg-white p-2 rounded-lg border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/30 cursor-pointer transition-all"
-                  title="Clique para preencher credenciais de Administrador"
-                >
-                  <div className="font-bold text-slate-800 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                    Administrador:
-                  </div>
-                  <div className="font-mono text-slate-600 text-[10px] mt-0.5">{DEFAULT_ADMIN_EMAIL}</div>
-                  <div className="text-[10px] text-slate-400">ou usuário <code className="text-slate-600 font-bold">admin</code></div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Senha: <code className="font-mono text-slate-700">Digidox@2023</code></div>
-                </div>
-                <div
-                  onClick={() => {
-                    setEmail(DEFAULT_ANALYST_EMAIL);
-                    setPassword('Analista@123');
-                    setError(null);
-                  }}
-                  className="bg-white p-2 rounded-lg border border-slate-200 hover:border-blue-500 hover:bg-blue-50/30 cursor-pointer transition-all"
-                  title="Clique para preencher credenciais de Analista"
-                >
-                  <div className="font-bold text-slate-800 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                    Analista:
-                  </div>
-                  <div className="font-mono text-slate-600 text-[10px] mt-0.5">{DEFAULT_ANALYST_EMAIL}</div>
-                  <div className="text-[10px] text-slate-400">ou usuário <code className="text-slate-600 font-bold">analista</code></div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Senha: <code className="font-mono text-slate-700">Analista@123</code></div>
-                </div>
-                <div
-                  onClick={() => {
-                    setEmail(DEFAULT_RELBIO_EMAIL);
-                    setPassword('Relbio@123');
-                    setError(null);
-                  }}
-                  className="bg-white p-2 rounded-lg border border-slate-200 hover:border-amber-500 hover:bg-amber-50/30 cursor-pointer transition-all"
-                  title="Clique para preencher credenciais de Relbio"
-                >
-                  <div className="font-bold text-slate-800 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                    Relbio:
-                  </div>
-                  <div className="font-mono text-slate-600 text-[10px] mt-0.5">{DEFAULT_RELBIO_EMAIL}</div>
-                  <div className="text-[10px] text-slate-400">ou usuário <code className="text-slate-600 font-bold">relbio</code></div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Senha: <code className="font-mono text-slate-700">Relbio@123</code></div>
-                </div>
-              </div>
-            </div>
-          )}
 
           {error && (
             <div
