@@ -21,9 +21,9 @@ import {
   loadMonthsFromDb,
   saveMonthToDb,
   deleteMonthFromDb,
+  getLocalMonthsCache,
+  cacheSingleMonthLocally,
 } from './services/firestoreService';
-
-const STORAGE_KEY = 'equip_control_sheets_v2';
 
 // Helper to determine the current vigente month ID
 function getVigenteMonthId(list: MonthSheetData[]): string {
@@ -49,13 +49,25 @@ export default function App() {
     onlyCurrentMonth,
   } = useAuth();
 
-  // State for all months
-  const [months, setMonths] = useState<MonthSheetData[]>(INITIAL_MONTHS);
+  // State for all months - initialize from local cache if available to guarantee zero data loss
+  const [months, setMonths] = useState<MonthSheetData[]>(() => {
+    const cached = getLocalMonthsCache();
+    return cached && cached.length > 0 ? cached : INITIAL_MONTHS;
+  });
   const [isDbLoaded, setIsDbLoaded] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
+  // Certainty and feedback state for database saves
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [saveErrorMsg, setSaveErrorMsg] = useState<string | null>(null);
+
   // Active month tab - Por padrão manter sempre no mês vigente a tela
-  const [activeTabId, setActiveTabId] = useState<string>(() => getVigenteMonthId(INITIAL_MONTHS));
+  const [activeTabId, setActiveTabId] = useState<string>(() => {
+    const cached = getLocalMonthsCache();
+    const source = cached && cached.length > 0 ? cached : INITIAL_MONTHS;
+    return getVigenteMonthId(source);
+  });
   const [summaryActive, setSummaryActive] = useState<boolean>(false);
 
   // Selected cell tracking for formula bar
@@ -74,8 +86,14 @@ export default function App() {
   const [tabToDelete, setTabToDelete] = useState<MonthSheetData | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
-  // Debounce ref for saving month changes
+  // Debounce ref and pending save data for robust saving
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingSaveRef = useRef<{
+    month: MonthSheetData;
+    actionDesc: string;
+    details?: string;
+    category: any;
+  } | null>(null);
 
   // Load from Firestore on initial login / page refresh
   useEffect(() => {
@@ -93,6 +111,7 @@ export default function App() {
           setActiveTabId(vigenteId);
           setSummaryActive(false);
           setIsDbLoaded(true);
+          setSaveStatus('saved');
         }
       } catch (err) {
         console.error('Failed to load from Firestore', err);
@@ -120,9 +139,47 @@ export default function App() {
     }
   }, [onlyCurrentMonth, months, activeTabId, summaryActive]);
 
+  // Flush any pending save before the user closes or reloads the tab
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (pendingSaveRef.current && currentUser) {
+        const { month, actionDesc, details, category } = pendingSaveRef.current;
+        cacheSingleMonthLocally(month);
+        saveMonthToDb(month, currentUser, actionDesc, details, category).catch(console.error);
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [currentUser]);
+
   // Current active month
   const currentMonthIndex = months.findIndex((m) => m.id === activeTabId);
   const currentMonth = months[currentMonthIndex] || months[0];
+
+  // Robust function to commit a save directly to Firestore with feedback
+  const commitSave = async (
+    monthToSave: MonthSheetData,
+    actionDesc: string,
+    details?: string,
+    category: any = 'sistema'
+  ) => {
+    if (!currentUser) return;
+    try {
+      setIsSyncing(true);
+      setSaveStatus('saving');
+      await saveMonthToDb(monthToSave, currentUser, actionDesc, details, category);
+      setSaveStatus('saved');
+      setLastSavedAt(new Date());
+      setSaveErrorMsg(null);
+      pendingSaveRef.current = null;
+    } catch (err: any) {
+      console.error('Failed to save month to Firestore:', err);
+      setSaveStatus('error');
+      setSaveErrorMsg(err?.message || 'Erro ao sincronizar com o banco');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Helper to update current month data and sync to Firestore
   const updateCurrentMonth = (
@@ -138,25 +195,45 @@ export default function App() {
         const updatedMonth = updater(copy[idx]);
         copy[idx] = updatedMonth;
 
-        // Auto-sync with debounce to Firestore if authenticated
+        // Synchronous immediate local cache write guarantees zero data loss
+        cacheSingleMonthLocally(updatedMonth);
+
+        // Keep track of pending changes
+        pendingSaveRef.current = {
+          month: updatedMonth,
+          actionDesc,
+          details,
+          category,
+        };
+
+        // Auto-sync with debounce to Firestore
         if (currentUser) {
           if (saveTimeoutRef.current) {
             clearTimeout(saveTimeoutRef.current);
           }
-          saveTimeoutRef.current = setTimeout(async () => {
-            try {
-              setIsSyncing(true);
-              await saveMonthToDb(updatedMonth, currentUser, actionDesc, details, category);
-            } catch (err) {
-              console.error('Failed to save month to Firestore:', err);
-            } finally {
-              setIsSyncing(false);
-            }
-          }, 600);
+          setSaveStatus('saving');
+          saveTimeoutRef.current = setTimeout(() => {
+            commitSave(updatedMonth, actionDesc, details, category);
+          }, 500);
         }
       }
       return copy;
     });
+  };
+
+  // Manual save triggered by the user
+  const handleManualSave = async () => {
+    if (!currentUser || !currentMonth) return;
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    await commitSave(
+      currentMonth,
+      'Salvamento Manual',
+      'Usuário acionou o salvamento manual no banco de dados',
+      'sistema'
+    );
   };
 
   // Specific table updaters
@@ -624,6 +701,13 @@ export default function App() {
       clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = null;
     }
+    // Flush any pending unsaved changes immediately to Firestore
+    if (pendingSaveRef.current && currentUser) {
+      const { month, actionDesc, details, category } = pendingSaveRef.current;
+      cacheSingleMonthLocally(month);
+      await saveMonthToDb(month, currentUser, actionDesc, details, category).catch(console.error);
+      pendingSaveRef.current = null;
+    }
     setIsSyncing(false);
     await logout();
     // Ao sair ou atualizar pagina, por padrão manter sempre no mês vigente a tela
@@ -654,6 +738,9 @@ export default function App() {
         onOpenUsersModal={() => setIsUsersModalOpen(true)}
         onLogout={handleLogout}
         isSyncing={isSyncing}
+        saveStatus={saveStatus}
+        lastSavedAt={lastSavedAt}
+        onManualSave={handleManualSave}
         isAdmin={isAdmin}
         onDeleteCurrentTab={() => handleRequestDeleteTab(currentMonth)}
       />

@@ -14,6 +14,10 @@ import {
   Shield,
   Cloud,
   Trash2,
+  Save,
+  CheckCircle2,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { MonthSheetData, AppUser } from '../types';
 import { exportMonthToExcel, exportAllMonthsToExcel } from '../utils/excelExport';
@@ -33,6 +37,9 @@ interface SpreadsheetHeaderProps {
   onOpenUsersModal: () => void;
   onLogout: () => void;
   isSyncing?: boolean;
+  saveStatus?: 'saved' | 'saving' | 'error';
+  lastSavedAt?: Date | null;
+  onManualSave?: () => void;
   isAdmin?: boolean;
   onDeleteCurrentTab?: () => void;
 }
@@ -52,6 +59,9 @@ export const SpreadsheetHeader: React.FC<SpreadsheetHeaderProps> = ({
   onOpenUsersModal,
   onLogout,
   isSyncing = false,
+  saveStatus = 'saved',
+  lastSavedAt = null,
+  onManualSave,
   isAdmin: propIsAdmin,
   onDeleteCurrentTab,
 }) => {
@@ -74,14 +84,59 @@ export const SpreadsheetHeader: React.FC<SpreadsheetHeaderProps> = ({
           <h1 className="text-sm font-semibold tracking-wide">
             Planilha Inteligente &bull; Controle de Equipamentos
           </h1>
-          <div className="flex items-center gap-1.5 bg-emerald-900/60 text-emerald-200 text-[10px] font-mono px-2 py-0.5 rounded">
-            <Cloud className="w-3 h-3" />
-            <span>{isSyncing ? 'Sincronizando...' : 'Banco de Dados Conectado'}</span>
-          </div>
+
+          {/* Database status and certainty indicator */}
+          {saveStatus === 'saving' || isSyncing ? (
+            <div
+              className="flex items-center gap-1.5 bg-amber-500/25 text-amber-200 border border-amber-400/40 text-[10px] font-mono px-2 py-0.5 rounded shadow-xs"
+              title="Salvando alterações no banco de dados na nuvem..."
+            >
+              <Loader2 className="w-3 h-3 animate-spin text-amber-300" />
+              <span>Salvando no Banco...</span>
+            </div>
+          ) : saveStatus === 'error' ? (
+            <button
+              onClick={onManualSave}
+              className="flex items-center gap-1.5 bg-red-600/80 hover:bg-red-600 text-white border border-red-400 text-[10px] font-mono px-2 py-0.5 rounded shadow-xs cursor-pointer"
+              title="Ocorreu um erro ao salvar no banco. Clique para forçar salvamento agora."
+            >
+              <AlertTriangle className="w-3 h-3 text-red-200" />
+              <span>Erro ao Salvar &bull; Clique para Salvar</span>
+            </button>
+          ) : (
+            <div
+              className="flex items-center gap-1.5 bg-emerald-900/70 text-emerald-200 border border-emerald-500/30 text-[10px] font-mono px-2 py-0.5 rounded shadow-xs"
+              title={
+                lastSavedAt
+                  ? `Todas as alterações foram gravadas com sucesso no banco de dados às ${lastSavedAt.toLocaleTimeString('pt-BR')}`
+                  : 'Todas as informações estão sincronizadas e salvas no banco de dados.'
+              }
+            >
+              <CheckCircle2 className="w-3 h-3 text-emerald-300" />
+              <span>
+                Salvo no Banco
+                {lastSavedAt ? ` às ${lastSavedAt.toLocaleTimeString('pt-BR')}` : ''}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* User profile & Actions */}
         <div className="flex items-center gap-2 text-xs flex-wrap">
+          {/* Explicit Save button so user has 100% certainty */}
+          {onManualSave && (
+            <button
+              id="btn-manual-save"
+              onClick={onManualSave}
+              disabled={isSyncing || saveStatus === 'saving'}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-60 text-white px-2.5 py-1 rounded text-[11px] font-medium transition-colors shadow-sm cursor-pointer border border-emerald-400/40"
+              title="Salvar imediatamente todas as alterações no banco de dados"
+            >
+              <Save className="w-3.5 h-3.5 text-emerald-100" />
+              <span>{isSyncing || saveStatus === 'saving' ? 'Salvando...' : 'Salvar no Banco'}</span>
+            </button>
+          )}
+
           {/* History Button */}
           <button
             onClick={onOpenHistory}

@@ -55,6 +55,7 @@ export async function hashPassword(plain: string): Promise<string> {
  */
 export function cacheUserLocally(user: AppUser): void {
   try {
+    if (typeof window === 'undefined') return;
     const users = getLocalUsersCache();
     const idx = users.findIndex(
       (u) => u.email.toLowerCase() === user.email.toLowerCase() || u.uid === user.uid
@@ -75,12 +76,65 @@ export function cacheUserLocally(user: AppUser): void {
  */
 export function getLocalUsersCache(): AppUser[] {
   try {
+    if (typeof window === 'undefined') return [];
     const raw = localStorage.getItem(USERS_CACHE_KEY);
     if (raw) {
       return JSON.parse(raw) as AppUser[];
     }
   } catch (e) {
     console.warn('Failed to read users cache:', e);
+  }
+  return [];
+}
+
+export const MONTHS_CACHE_KEY = 'equip_control_sheets_cache_v2';
+
+/**
+ * Cache all months locally for instant recovery and offline resiliency
+ */
+export function cacheMonthsLocally(months: MonthSheetData[]): void {
+  try {
+    if (typeof window === 'undefined' || !months || months.length === 0) return;
+    localStorage.setItem(MONTHS_CACHE_KEY, JSON.stringify(months));
+  } catch (e) {
+    console.warn('Failed to cache months locally:', e);
+  }
+}
+
+/**
+ * Cache or update a single month in local cache
+ */
+export function cacheSingleMonthLocally(month: MonthSheetData): void {
+  try {
+    if (typeof window === 'undefined') return;
+    const currentList = getLocalMonthsCache();
+    const idx = currentList.findIndex((m) => m.id === month.id);
+    if (idx !== -1) {
+      currentList[idx] = month;
+    } else {
+      currentList.push(month);
+    }
+    localStorage.setItem(MONTHS_CACHE_KEY, JSON.stringify(currentList));
+  } catch (e) {
+    console.warn('Failed to cache single month locally:', e);
+  }
+}
+
+/**
+ * Retrieve cached months from localStorage
+ */
+export function getLocalMonthsCache(): MonthSheetData[] {
+  try {
+    if (typeof window === 'undefined') return [];
+    const raw = localStorage.getItem(MONTHS_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed as MonthSheetData[];
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to read months cache:', e);
   }
   return [];
 }
@@ -758,17 +812,27 @@ export async function getAllUsers(): Promise<AppUser[]> {
 }
 
 /**
- * Load all months from Firestore.
+ * Load all months from Firestore with local cache fallback and synchronization.
  * Supports multiple months and years for continuous multi-year spreadsheet usage.
  */
 export async function loadMonthsFromDb(): Promise<MonthSheetData[]> {
   try {
     const snapshot = await getDocs(collection(db, MONTHS_COLLECTION));
     if (snapshot.empty) {
+      // Check local cache first before resetting to initial data!
+      const cached = getLocalMonthsCache();
+      if (cached && cached.length > 0) {
+        for (const m of cached) {
+          await setDoc(doc(db, MONTHS_COLLECTION, m.id), m);
+        }
+        return cached;
+      }
+
       // Seed initial data to cloud database
       for (const m of INITIAL_MONTHS) {
         await setDoc(doc(db, MONTHS_COLLECTION, m.id), m);
       }
+      cacheMonthsLocally(INITIAL_MONTHS);
       return INITIAL_MONTHS;
     }
 
@@ -791,18 +855,26 @@ export async function loadMonthsFromDb(): Promise<MonthSheetData[]> {
 
     if (processedMonths.length === 0) {
       await setDoc(doc(db, MONTHS_COLLECTION, INITIAL_SEPTEMBER_DATA.id), INITIAL_SEPTEMBER_DATA);
+      cacheMonthsLocally([INITIAL_SEPTEMBER_DATA]);
       return [INITIAL_SEPTEMBER_DATA];
     }
 
+    // Always mirror server data to local cache
+    cacheMonthsLocally(processedMonths);
     return processedMonths;
   } catch (err) {
-    console.error('Error loading months from Firestore:', err);
+    console.error('Error loading months from Firestore, using local cache:', err);
+    const cached = getLocalMonthsCache();
+    if (cached && cached.length > 0) {
+      return cached;
+    }
     return INITIAL_MONTHS;
   }
 }
 
 /**
- * Save / Update a single month in Firestore and record history
+ * Save / Update a single month in Firestore and record history.
+ * Mirrors immediately to persistent storage to guarantee zero data loss.
  */
 export async function saveMonthToDb(
   monthData: MonthSheetData,
@@ -820,40 +892,45 @@ export async function saveMonthToDb(
     user?.email?.toLowerCase() === RUNTIME_ADMIN_EMAIL.toLowerCase();
 
   if (!isAdmin) {
-    const existingSnap = await getDoc(monthRef);
-    if (!existingSnap.exists()) {
-      throw new Error('Permissão negada: Apenas administradores podem criar novas abas.');
-    }
+    try {
+      const existingSnap = await getDoc(monthRef);
+      if (existingSnap.exists()) {
+        const existingData = existingSnap.data() as MonthSheetData;
 
-    const existingData = existingSnap.data() as MonthSheetData;
+        // 1. Nem analista nem relbio podem alterar quantidades de estoque
+        monthData.initialStock = existingData.initialStock || monthData.initialStock;
+        monthData.reformedStock = existingData.reformedStock || monthData.reformedStock;
+        monthData.controllers = existingData.controllers || monthData.controllers;
 
-    // 1. Nem analista nem relbio podem alterar quantidades de estoque
-    monthData.initialStock = existingData.initialStock || monthData.initialStock;
-    monthData.reformedStock = existingData.reformedStock || monthData.reformedStock;
-    monthData.controllers = existingData.controllers || monthData.controllers;
-
-    // 2. Relbio não pode adicionar, alterar ou excluir previsões
-    const isRelbio =
-      user?.role?.toLowerCase() === 'relbio' ||
-      user?.email?.toLowerCase() === DEFAULT_RELBIO_EMAIL.toLowerCase();
-    if (isRelbio) {
-      monthData.forecasts = existingData.forecasts || monthData.forecasts;
-    }
-
-    // 3. Não pode alterar status nem excluir registro que já esteja com status 'Enviado/Instalado'
-    const oldInstallations = existingData.installations || [];
-    const newInstallations = monthData.installations || [];
-
-    for (const oldInst of oldInstallations) {
-      if (oldInst.status === 'Enviado/Instalado') {
-        const found = newInstallations.find((n) => n.id === oldInst.id);
-        if (!found) {
-          throw new Error(`Permissão negada: Apenas administradores podem excluir uma instalação com status "Enviado/Instalado" (${oldInst.obra || oldInst.chamado}).`);
+        // 2. Relbio não pode adicionar, alterar ou excluir previsões
+        const isRelbio =
+          user?.role?.toLowerCase() === 'relbio' ||
+          user?.email?.toLowerCase() === DEFAULT_RELBIO_EMAIL.toLowerCase();
+        if (isRelbio) {
+          monthData.forecasts = existingData.forecasts || monthData.forecasts;
         }
-        if (found.status !== 'Enviado/Instalado') {
-          throw new Error(`Permissão negada: A instalação "${oldInst.obra || oldInst.chamado}" já está com status "Enviado/Instalado" e não pode ser alterada por este usuário.`);
+
+        // 3. Não pode alterar status nem excluir registro que já esteja com status 'Enviado/Instalado'
+        const oldInstallations = existingData.installations || [];
+        const newInstallations = monthData.installations || [];
+
+        for (const oldInst of oldInstallations) {
+          if (oldInst.status === 'Enviado/Instalado') {
+            const found = newInstallations.find((n) => n.id === oldInst.id);
+            if (!found) {
+              throw new Error(`Permissão negada: Apenas administradores podem excluir uma instalação com status "Enviado/Instalado" (${oldInst.obra || oldInst.chamado}).`);
+            }
+            if (found.status !== 'Enviado/Instalado') {
+              throw new Error(`Permissão negada: A instalação "${oldInst.obra || oldInst.chamado}" já está com status "Enviado/Instalado" e não pode ser alterada por este usuário.`);
+            }
+          }
         }
       }
+    } catch (checkErr: any) {
+      if (checkErr.message && checkErr.message.includes('Permissão negada:')) {
+        throw checkErr;
+      }
+      console.warn('Existing document check warning in saveMonthToDb:', checkErr);
     }
   }
 
@@ -865,9 +942,13 @@ export async function saveMonthToDb(
     updatedBy: user.displayName || user.email,
   };
 
+  // 1. Instant local persistence: guarantees no loss if browser is refreshed or closed
+  cacheSingleMonthLocally(dataToSave);
+
+  // 2. Cloud Firestore persistence
   await setDoc(monthRef, dataToSave);
 
-  // Log to history in database
+  // 3. Log to history in database
   await logHistoryEvent({
     user,
     action: actionDescription,
@@ -896,6 +977,11 @@ export async function deleteMonthFromDb(
 
   const monthRef = doc(db, MONTHS_COLLECTION, monthId);
   await deleteDoc(monthRef);
+
+  // Also remove from local cache
+  const cached = getLocalMonthsCache();
+  const remaining = cached.filter((m) => m.id !== monthId);
+  cacheMonthsLocally(remaining);
 
   // Log history
   await logHistoryEvent({

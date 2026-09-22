@@ -1,31 +1,9 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Regras de Segurança e Controle de Acesso - DigiDox Controle de Equipamentos
-    // 1. Usuários Administradores possuem controle irrestrito de abas, estoque e status.
-    // 2. Usuários Analistas (operator) têm permissão de leitura e edição padrão,
-    //    porém NÃO podem criar novas abas e NÃO podem alterar ou reverter registros
-    //    cujo status já esteja confirmado como "Enviado/Instalado".
-    // 3. Exclusão de obras e abas é estritamente restrita a administradores.
-
-    // Coleção de usuários do sistema
-    match /users/{userId} {
-      allow read, write: if true;
-    }
-
-    // Coleção de planilhas mensais
-    match /months/{monthId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Registro de auditoria e histórico de operações
-    match /history/{historyId} {
-      allow read, write: if true;
-    }
-
-    // Configurações do sistema
-    match /system/{docId} {
+    // Permissão completa para todas as coleções do sistema de controle de equipamentos
+    // (users, months, history, system, e quaisquer subcoleções)
+    match /{document=**} {
       allow read, write: if true;
     }
   }

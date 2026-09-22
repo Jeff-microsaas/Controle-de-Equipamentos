@@ -1,6 +1,12 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  doc,
+  getDocFromServer,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from 'firebase/firestore';
 import configData from '../../firebase-applet-config.json';
 
 const firebaseConfig = {
@@ -15,8 +21,19 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 export const auth = getAuth(app);
 
-// Use the dedicated database ID provided in config
-export const db = initializeFirestore(app, {}, configData.firestoreDatabaseId || '(default)');
+// Use the dedicated database ID provided in config with robust multi-tab persistent cache
+const isBrowser = typeof window !== 'undefined';
+export const db = initializeFirestore(
+  app,
+  isBrowser
+    ? {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager(),
+        }),
+      }
+    : {},
+  configData.firestoreDatabaseId || '(default)'
+);
 
 // Validate connection to Firestore on boot as per Firebase skill guidelines
 export async function testConnection() {
